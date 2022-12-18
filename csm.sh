@@ -10,12 +10,7 @@ Font_SkyBlue="\033[36m"
 Font_White="\033[37m"
 Font_Suffix="\033[0m"
 
-UA_Browser="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
-UA_Dalvik="Dalvik/2.1.0 (Linux; U; Android 9; ALP-AL00 Build/HUAWEIALP-AL00)"
-WOWOW_Cookie=$(curl -s https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/cookies | awk 'NR==3')
-TVer_Cookie="Accept: application/json;pk=BCpkADawqM3ZdH8iYjCnmIpuIRqzCn12gVrtpk_qOePK3J9B6h7MuqOw5T_qIqdzpLvuvb_hTvu7hs-7NsvXnPTYKd9Cgw7YiwI9kFfOOCDDEr20WDEYMjGiLptzWouXXdfE996WWM8myP3Z"
-
-while getopts ":I:M:L:" optname; do
+while getopts ":I:M:EX:P:" optname; do
     case "$optname" in
     "I")
         iface="$OPTARG"
@@ -28,9 +23,17 @@ while getopts ":I:M:L:" optname; do
             NetworkType=6
         fi
         ;;
-    "L")
+    "E")
         language="e"
         ;;
+    "X")
+        XIP="$OPTARG"
+        xForward="--header X-Forwarded-For:$XIP"
+        ;;
+    "P")
+        proxy="$OPTARG"
+        usePROXY="-x $proxy"
+    	;;
     ":")
         echo "Unknown error while processing options"
         exit 1
@@ -38,6 +41,29 @@ while getopts ":I:M:L:" optname; do
     esac
 
 done
+
+if [ -z "$iface" ]; then
+    useNIC=""
+fi
+
+if [ -z "$XIP" ]; then
+    xForward=""
+fi
+
+if [ -z "$proxy" ]; then
+    usePROXY=""
+elif [ -n "$proxy" ]; then
+    NetworkType=4
+fi
+
+if ! mktemp -u --suffix=RRC &>/dev/null; then
+    is_busybox=1
+fi
+
+UA_Browser="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
+UA_Dalvik="Dalvik/2.1.0 (Linux; U; Android 9; ALP-AL00 Build/HUAWEIALP-AL00)"
+WOWOW_Cookie=$(curl -s "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/cookies" | awk 'NR==3')
+TVer_Cookie="Accept: application/json;pk=BCpkADawqM0_rzsjsYbC1k1wlJLU4HiAtfzjxdUmfvvLUQB-Ax6VA-p-9wOEZbCEm3u95qq2Y1CQQW1K9tPaMma9iAqUqhpISCmyXrgnlpx9soEmoVNuQpiyGsTpePGumWxSs1YoKziYB6Wz"
 
 green() {
 	echo -e "\033[32m[info]\033[0m"
@@ -53,12 +79,6 @@ yellow() {
 
 blue() {
 	echo -e "\033[34m[input]\033[0m"
-}
-
-checkInterface() {
-    if [ -z "$iface" ]; then
-        useNIC=""
-    fi
 }
 
 checkOs() {
@@ -239,24 +259,21 @@ MediaUnlockTest_BBCiPLAYER() {
 }
 
 MediaUnlockTest_Netflix() {
-    local result1=$(curl $useNIC -${1} --user-agent "${UA_Browser}" -fsL --write-out %{http_code} --output /dev/null --max-time 10 "https://www.netflix.com/title/81215567" 2>&1)
+    local result1=$(curl $useNIC $usePROXY $xForward -${1} --user-agent "${UA_Browser}" -fsL --write-out %{http_code} --output /dev/null --max-time 10 "https://www.netflix.com/title/81280792" 2>&1)
 
     if [[ "$result1" == "404" ]]; then
         modifyJsonTemplate 'Netflix_result' 'No' 'Originals Only'
         return
-
     elif [[ "$result1" == "403" ]]; then
         modifyJsonTemplate 'Netflix_result' 'No'
         return
-
     elif [[ "$result1" == "200" ]]; then
-        local region=$(tr [:lower:] [:upper:] <<<$(curl $useNIC -${1} --user-agent "${UA_Browser}" -fs --max-time 10 --write-out %{redirect_url} --output /dev/null "https://www.netflix.com/title/80018499" | cut -d '/' -f4 | cut -d '-' -f1))
+        local region=$(curl $useNIC $usePROXY $xForward -${1} --user-agent "${UA_Browser}" -fs --max-time 10 --write-out %{redirect_url} --output /dev/null "https://www.netflix.com/title/80018499" | cut -d '/' -f4 | cut -d '-' -f1 | tr [:lower:] [:upper:])
         if [[ ! -n "$region" ]]; then
             region="US"
         fi
         modifyJsonTemplate 'Netflix_result' 'Yes' "${region}"
         return
-
     elif [[ "$result1" == "000" ]]; then
         modifyJsonTemplate 'Netflix_result' 'Unknow'
         return
@@ -491,7 +508,7 @@ printInfo() {
     echo
     echo -e "${green_start}Project: https://github.com/iamsaltedfish/check-stream-media${color_end}"
     echo -e "${green_start}Author: @iamsaltedfish${color_end}"
-    echo -e "${green_start}2021-01-10 v.1.0.3${color_end}"
+    echo -e "${green_start}2022-12-19 v.1.0.5${color_end}"
 }
 
 runCheck() {
