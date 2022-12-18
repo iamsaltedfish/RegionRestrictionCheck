@@ -525,7 +525,6 @@ runCheck() {
 
 main() {
     checkOs
-    checkInterface
     checkDependencies
     setCronTask
     checkConfig
