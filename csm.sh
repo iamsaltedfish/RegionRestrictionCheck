@@ -62,7 +62,9 @@ fi
 
 UA_Browser="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
 UA_Dalvik="Dalvik/2.1.0 (Linux; U; Android 9; ALP-AL00 Build/HUAWEIALP-AL00)"
-WOWOW_Cookie=$(curl -s "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/cookies" | awk 'NR==3')
+Media_Cookie=$(curl -s --retry 3 --max-time 10 "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/cookies")
+IATACode=$(curl -s --retry 3 --max-time 10 "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/reference/IATACode.txt")
+WOWOW_Cookie=$(echo "$Media_Cookie" | awk 'NR==3')
 TVer_Cookie="Accept: application/json;pk=BCpkADawqM0_rzsjsYbC1k1wlJLU4HiAtfzjxdUmfvvLUQB-Ax6VA-p-9wOEZbCEm3u95qq2Y1CQQW1K9tPaMma9iAqUqhpISCmyXrgnlpx9soEmoVNuQpiyGsTpePGumWxSs1YoKziYB6Wz"
 
 green() {
@@ -81,109 +83,113 @@ blue() {
 	echo -e "\033[34m[input]\033[0m"
 }
 
-checkOs() {
+checkOS() {
     ifTermux=$(echo $PWD | grep termux)
     ifMacOS=$(uname -a | grep Darwin)
     if [ -n "$ifTermux" ]; then
         os_version=Termux
+        is_termux=1
     elif [ -n "$ifMacOS" ]; then
         os_version=MacOS
+        is_macos=1
     else
         os_version=$(grep 'VERSION_ID' /etc/os-release | cut -d '"' -f 2 | tr -d '.')
     fi
 
     if [[ "$os_version" == "2004" ]] || [[ "$os_version" == "10" ]] || [[ "$os_version" == "11" ]]; then
+        is_windows=1
         ssll="-k --ciphers DEFAULT@SECLEVEL=1"
     fi
-}
 
-checkDependencies() {
-
-    os_detail=$(cat /etc/os-release 2>/dev/null)
-    if_debian=$(echo $os_detail | grep 'ebian')
-    if_redhat=$(echo $os_detail | grep 'rhel')
-
-    if [ -n "$if_debian" ]; then
+    if [ "$(which apt 2>/dev/null)" ]; then
         InstallMethod="apt"
-    elif [ -n "$if_redhat" ] && [[ "$os_version" -gt 7 ]]; then
-        InstallMethod="dnf"
-    elif [ -n "$if_redhat" ] && [[ "$os_version" -lt 8 ]]; then
+        is_debian=1
+    elif [ "$(which dnf 2>/dev/null)" ] || [ "$(which yum 2>/dev/null)" ]; then
         InstallMethod="yum"
+        is_redhat=1
     elif [[ "$os_version" == "Termux" ]]; then
         InstallMethod="pkg"
     elif [[ "$os_version" == "MacOS" ]]; then
         InstallMethod="brew"
     fi
+}
 
-    python -V >/dev/null 2>&1
-    if [[ "$?" -ne "0" ]]; then
-        python3 -V >/dev/null 2>&1
-        if [[ "$?" -eq "0" ]]; then
-            python3_patch=$(which python3)
-            ln -s $python3_patch /usr/bin/python >/dev/null 2>&1
+checkCPU() {
+    CPUArch=$(uname -m)
+    if [[ "$CPUArch" == "aarch64" ]]; then
+        arch=_arm64
+    elif [[ "$CPUArch" == "i686" ]]; then
+        arch=_i686
+    elif [[ "$CPUArch" == "arm" ]]; then
+        arch=_arm
+    elif [[ "$CPUArch" == "x86_64" ]] && [ -n "$ifMacOS" ]; then
+        arch=_darwin
+    fi
+}
+
+checkDependencies() {
+    if ! command -v python &>/dev/null; then
+        if command -v python3 &>/dev/null; then
+            alias python="python3"
         else
-            if [ -n "$if_debian" ]; then
+            if [ "$is_debian" == 1 ]; then
                 echo -e "${Font_Green}Installing python${Font_Suffix}"
                 $InstallMethod update >/dev/null 2>&1
                 $InstallMethod install python -y >/dev/null 2>&1
-            elif [ -n "$if_redhat" ]; then
+            elif [ "$is_redhat" == 1 ]; then
                 echo -e "${Font_Green}Installing python${Font_Suffix}"
                 if [[ "$os_version" -gt 7 ]]; then
-                    $InstallMethod update >/dev/null 2>&1
+                    $InstallMethod makecache >/dev/null 2>&1
                     $InstallMethod install python3 -y >/dev/null 2>&1
-                    python3_patch=$(which python3)
-                    ln -s $python3_patch /usr/bin/python
+                    alias python="python3"
                 else
-                    $InstallMethod update >/dev/null 2>&1
+                    $InstallMethod makecache >/dev/null 2>&1
                     $InstallMethod install python -y >/dev/null 2>&1
                 fi
 
-            elif [[ "$os_version" == "Termux" ]]; then
+            elif [ "$is_termux" == 1 ]; then
                 echo -e "${Font_Green}Installing python${Font_Suffix}"
                 $InstallMethod update -y >/dev/null 2>&1
                 $InstallMethod install python -y >/dev/null 2>&1
 
-            elif [[ "$os_version" == "MacOS" ]]; then
+            elif [ "$is_macos" == 1 ]; then
                 echo -e "${Font_Green}Installing python${Font_Suffix}"
                 $InstallMethod install python
-
             fi
         fi
     fi
 
-    dig -v >/dev/null 2>&1
-    if [[ "$?" -ne "0" ]]; then
-        if [[ "$InstallMethod" == "apt" ]]; then
+    if ! command -v dig &>/dev/null; then
+        if [ "$is_debian" == 1 ]; then
             echo -e "${Font_Green}Installing dnsutils${Font_Suffix}"
             $InstallMethod update >/dev/null 2>&1
             $InstallMethod install dnsutils -y >/dev/null 2>&1
-        elif [[ "$InstallMethod" == "yum" ]]; then
+        elif [ "$is_redhat" == 1 ]; then
             echo -e "${Font_Green}Installing bind-utils${Font_Suffix}"
-            $InstallMethod update >/dev/null 2>&1
+            $InstallMethod makecache >/dev/null 2>&1
             $InstallMethod install bind-utils -y >/dev/null 2>&1
-        elif [[ "$InstallMethod" == "pkg" ]]; then
+        elif [ "$is_termux" == 1 ]; then
             echo -e "${Font_Green}Installing dnsutils${Font_Suffix}"
             $InstallMethod update -y >/dev/null 2>&1
             $InstallMethod install dnsutils -y >/dev/null 2>&1
-        elif [[ "$InstallMethod" == "brew" ]]; then
+        elif [ "$is_macos" == 1 ]; then
             echo -e "${Font_Green}Installing bind${Font_Suffix}"
             $InstallMethod install bind
         fi
     fi
 
-    if [[ "$os_version" == "MacOS" ]]; then
-        md5sum /dev/null >/dev/null 2>&1
-        if [[ "$?" -ne "0" ]]; then
+    if [ "$is_macos" == 1 ]; then
+        if ! command -v md5sum &>/dev/null; then
             echo -e "${Font_Green}Installing md5sha1sum${Font_Suffix}"
             $InstallMethod install md5sha1sum
         fi
     fi
+
 }
 
 MediaUnlockTest_BilibiliHKMCTW() {
     local randsession="$(cat /dev/urandom | head -n 32 | md5sum | head -c 32)"
-    local result=$(curl $useNIC --user-agent "${UA_Browser}" -${1} -fsSL --max-time 10 "https://api.bilibili.com/pgc/player/web/playurl?avid=18281381&cid=29892777&qn=0&type=&otype=json&ep_id=183799&fourk=1&fnver=0&fnval=16&session=${randsession}&module=bangumi" 2>&1)
-
+    local result=$(curl $useNIC $usePROXY $xForward --user-agent "${UA_Browser}" -${1} -fsSL --max-time 10 "https://api.bilibili.com/pgc/player/web/playurl?avid=18281381&cid=29892777&qn=0&type=&otype=json&ep_id=183799&fourk=1&fnver=0&fnval=16&session=${randsession}&module=bangumi" 2>&1)
     if [[ "$result" != "curl"* ]]; then
         local result="$(echo "${result}" | python -m json.tool 2>/dev/null | grep '"code"' | head -1 | awk '{print $2}' | cut -d ',' -f1)"
         if [ "${result}" = "0" ]; then
@@ -198,10 +204,11 @@ MediaUnlockTest_BilibiliHKMCTW() {
     fi
 }
 
+# 流媒体解锁测试-哔哩哔哩台湾限定
 MediaUnlockTest_BilibiliTW() {
     local randsession="$(cat /dev/urandom | head -n 32 | md5sum | head -c 32)"
-    local result=$(curl $useNIC --user-agent "${UA_Browser}" -${1} -fsSL --max-time 10 "https://api.bilibili.com/pgc/player/web/playurl?avid=50762638&cid=100279344&qn=0&type=&otype=json&ep_id=268176&fourk=1&fnver=0&fnval=16&session=${randsession}&module=bangumi" 2>&1)
-
+    # 尝试获取成功的结果
+    local result=$(curl $useNIC $usePROXY $xForward --user-agent "${UA_Browser}" -${1} -fsSL --max-time 10 "https://api.bilibili.com/pgc/player/web/playurl?avid=50762638&cid=100279344&qn=0&type=&otype=json&ep_id=268176&fourk=1&fnver=0&fnval=16&session=${randsession}&module=bangumi" 2>&1)
     if [[ "$result" != "curl"* ]]; then
         local result="$(echo "${result}" | python -m json.tool 2>/dev/null | grep '"code"' | head -1 | awk '{print $2}' | cut -d ',' -f1)"
         if [ "${result}" = "0" ]; then
@@ -217,15 +224,15 @@ MediaUnlockTest_BilibiliTW() {
 }
 
 MediaUnlockTest_AbemaTV_IPTest() {
-    local tempresult=$(curl $useNIC --user-agent "${UA_Dalvik}" -${1} -fsL --write-out %{http_code} --max-time 10 "https://api.abema.io/v1/ip/check?device=android" 2>&1)
+
+    local tempresult=$(curl $useNIC $usePROXY $xForward --user-agent "${UA_Dalvik}" -${1} -fsL --write-out %{http_code} --max-time 10 "https://api.abema.io/v1/ip/check?device=android" 2>&1)
 
     if [[ "$tempresult" == "000" ]]; then
         modifyJsonTemplate 'AbemaTV_result' 'Unknow'
         return
     fi
 
-    result=$(curl $useNIC --user-agent "${UA_Dalvik}" -${1} -fsL --max-time 10 "https://api.abema.io/v1/ip/check?device=android" | python -m json.tool 2>/dev/null | grep isoCountryCode | awk '{print $2}' | cut -f2 -d'"')
-
+    result=$(curl $useNIC $usePROXY $xForward --user-agent "${UA_Dalvik}" -${1} -fsL --max-time 10 "https://api.abema.io/v1/ip/check?device=android" 2>&1 | python -m json.tool 2>/dev/null | grep isoCountryCode | awk '{print $2}' | cut -f2 -d'"')
     if [ -n "$result" ]; then
         if [[ "$result" == "JP" ]]; then
             modifyJsonTemplate 'AbemaTV_result' 'Yes'
@@ -238,12 +245,10 @@ MediaUnlockTest_AbemaTV_IPTest() {
 }
 
 MediaUnlockTest_BBCiPLAYER() {
-    local tmpresult=$(curl $useNIC --user-agent "${UA_Browser}" -${1} ${ssll} -fsL --max-time 10 https://open.live.bbc.co.uk/mediaselector/6/select/version/2.0/mediaset/pc/vpid/bbc_one_london/format/json/jsfunc/JS_callbacks0)
-
+    local tmpresult=$(curl $useNIC $usePROXY $xForward --user-agent "${UA_Browser}" -${1} ${ssll} -fsL --max-time 10 "https://open.live.bbc.co.uk/mediaselector/6/select/version/2.0/mediaset/pc/vpid/bbc_one_london/format/json/jsfunc/JS_callbacks0" 2>&1)
     if [ "${tmpresult}" = "000" ]; then
         modifyJsonTemplate 'BBC_result' 'Unknow'
         return
-
     fi
 
     if [ -n "$tmpresult" ]; then
@@ -280,44 +285,8 @@ MediaUnlockTest_Netflix() {
     fi
 }
 
-MediaUnlockTest_YouTube_Premium() {
-    local tmpresult=$(curl $useNIC -${1} -sS -H "Accept-Language: en" "https://www.youtube.com/premium" 2>&1)
-    local region=$(curl $useNIC --user-agent "${UA_Browser}" -${1} -sL --max-time 10 "https://www.youtube.com/premium" | grep "countryCode" | sed 's/.*"countryCode"//' | cut -f2 -d'"')
-
-    if [ -n "$region" ]; then
-        sleep 0
-    else
-        isCN=$(echo $tmpresult | grep 'www.google.cn')
-        if [ -n "$isCN" ]; then
-            region=CN
-        else
-            region=US
-        fi
-    fi
-
-    if [[ "$tmpresult" == "curl"* ]]; then
-        modifyJsonTemplate 'YouTube_Premium_result' 'Unknow'
-        return
-    fi
-
-    local result=$(echo $tmpresult | grep 'Premium is not available in your country')
-    if [ -n "$result" ]; then
-        modifyJsonTemplate 'YouTube_Premium_result' 'No' "${region}"
-        return
-
-    fi
-
-    local result=$(echo $tmpresult | grep 'manageSubscriptionButton')
-    if [ -n "$result" ]; then
-        modifyJsonTemplate 'YouTube_Premium_result' 'Yes' "${region}"
-        return
-    else
-        modifyJsonTemplate 'YouTube_Premium_result' 'Unknow'
-    fi
-}
-
 MediaUnlockTest_DisneyPlus() {
-    local PreAssertion=$(curl $useNIC -${1} --user-agent "${UA_Browser}" -s --max-time 10 -X POST "https://global.edge.bamgrid.com/devices" -H "authorization: Bearer ZGlzbmV5JmJyb3dzZXImMS4wLjA.Cu56AgSfBTDag5NiRA81oLHkDZfu5L3CKadnefEAY84" -H "content-type: application/json; charset=UTF-8" -d '{"deviceFamily":"browser","applicationRuntime":"chrome","deviceProfile":"windows","attributes":{}}' 2>&1)
+    local PreAssertion=$(curl $useNIC $usePROXY $xForward -${1} --user-agent "${UA_Browser}" -s --max-time 10 -X POST "https://disney.api.edge.bamgrid.com/devices" -H "authorization: Bearer ZGlzbmV5JmJyb3dzZXImMS4wLjA.Cu56AgSfBTDag5NiRA81oLHkDZfu5L3CKadnefEAY84" -H "content-type: application/json; charset=UTF-8" -d '{"deviceFamily":"browser","applicationRuntime":"chrome","deviceProfile":"windows","attributes":{}}' 2>&1)
 
     if [[ "$PreAssertion" == "curl"* ]] && [[ "$1" == "6" ]]; then
         echo -n -e "\r Disney+:\t\t\t\t${Font_Red}IPv6 Not Support${Font_Suffix}\n"
@@ -328,9 +297,9 @@ MediaUnlockTest_DisneyPlus() {
     fi
 
     local assertion=$(echo $PreAssertion | python -m json.tool 2>/dev/null | grep assertion | cut -f4 -d'"')
-    local PreDisneyCookie=$(curl -s --max-time 10 "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/cookies" | sed -n '1p')
+    local PreDisneyCookie=$(echo "$Media_Cookie" | sed -n '1p')
     local disneycookie=$(echo $PreDisneyCookie | sed "s/DISNEYASSERTION/${assertion}/g")
-    local TokenContent=$(curl $useNIC -${1} --user-agent "${UA_Browser}" -s --max-time 10 -X POST "https://global.edge.bamgrid.com/token" -H "authorization: Bearer ZGlzbmV5JmJyb3dzZXImMS4wLjA.Cu56AgSfBTDag5NiRA81oLHkDZfu5L3CKadnefEAY84" -d "$disneycookie")
+    local TokenContent=$(curl $useNIC $usePROXY $xForward -${1} --user-agent "${UA_Browser}" -s --max-time 10 -X POST "https://disney.api.edge.bamgrid.com/token" -H "authorization: Bearer ZGlzbmV5JmJyb3dzZXImMS4wLjA.Cu56AgSfBTDag5NiRA81oLHkDZfu5L3CKadnefEAY84" -d "$disneycookie" 2>&1)
     local isBanned=$(echo $TokenContent | python -m json.tool 2>/dev/null | grep 'forbidden-location')
     local is403=$(echo $TokenContent | grep '403 ERROR')
 
@@ -339,11 +308,11 @@ MediaUnlockTest_DisneyPlus() {
         return
     fi
 
-    local fakecontent=$(curl -s --max-time 10 "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/cookies" | sed -n '8p')
+    local fakecontent=$(echo "$Media_Cookie" | sed -n '8p')
     local refreshToken=$(echo $TokenContent | python -m json.tool 2>/dev/null | grep 'refresh_token' | awk '{print $2}' | cut -f2 -d'"')
     local disneycontent=$(echo $fakecontent | sed "s/ILOVEDISNEY/${refreshToken}/g")
-    local tmpresult=$(curl $useNIC -${1} --user-agent "${UA_Browser}" -X POST -sSL --max-time 10 "https://disney.api.edge.bamgrid.com/graph/v1/device/graphql" -H "authorization: ZGlzbmV5JmJyb3dzZXImMS4wLjA.Cu56AgSfBTDag5NiRA81oLHkDZfu5L3CKadnefEAY84" -d "$disneycontent" 2>&1)
-    local previewcheck=$(curl $useNIC -${1} -s -o /dev/null -L --max-time 10 -w '%{url_effective}\n' "https://disneyplus.com" | grep preview)
+    local tmpresult=$(curl $useNIC $usePROXY $xForward -${1} --user-agent "${UA_Browser}" -X POST -sSL --max-time 10 "https://disney.api.edge.bamgrid.com/graph/v1/device/graphql" -H "authorization: ZGlzbmV5JmJyb3dzZXImMS4wLjA.Cu56AgSfBTDag5NiRA81oLHkDZfu5L3CKadnefEAY84" -d "$disneycontent" 2>&1)
+    local previewcheck=$(curl $useNIC $usePROXY $xForward -${1} -s -o /dev/null -L --max-time 10 -w '%{url_effective}\n' "https://disneyplus.com" | grep preview)
     local isUnabailable=$(echo $previewcheck | grep 'unavailable')
     local region=$(echo $tmpresult | python -m json.tool 2>/dev/null | grep 'countryCode' | cut -f4 -d'"')
     local inSupportedLocation=$(echo $tmpresult | python -m json.tool 2>/dev/null | grep 'inSupportedLocation' | awk '{print $2}' | cut -f1 -d',')
@@ -369,17 +338,46 @@ MediaUnlockTest_DisneyPlus() {
     fi
 }
 
-MediaUnlockTest_MyTVSuper() {
-    local result=$(curl $useNIC -s -${1} --max-time 10 https://www.mytvsuper.com/iptest.php | grep 'HK')
+MediaUnlockTest_YouTube_Premium() {
+    local tmpresult=$(curl $useNIC $usePROXY $xForward --user-agent "${UA_Browser}" -${1} --max-time 10 -sSL -H "Accept-Language: en" -b "YSC=BiCUU3-5Gdk; CONSENT=YES+cb.20220301-11-p0.en+FX+700; GPS=1; VISITOR_INFO1_LIVE=4VwPMkB7W5A; PREF=tz=Asia.Shanghai; _gcl_au=1.1.1809531354.1646633279" "https://www.youtube.com/premium" 2>&1)
 
-    if [ -n "$result" ]; then
+    if [[ "$tmpresult" == "curl"* ]]; then
+        modifyJsonTemplate 'YouTube_Premium_result' 'Unknow'
+        return
+    fi
+    local isCN=$(echo $tmpresult | grep 'www.google.cn')
+    if [ -n "$isCN" ]; then
+        modifyJsonTemplate 'YouTube_Premium_result' 'No' "CN"
+        return
+    fi
+    local isNotAvailable=$(echo $tmpresult | grep 'Premium is not available in your country')
+    local region=$(echo $tmpresult | grep "countryCode" | sed 's/.*"countryCode"//' | cut -f2 -d'"')
+    local isAvailable=$(echo $tmpresult | grep 'manageSubscriptionButton')
+    
+    if [ -n "$isNotAvailable" ]; then
+        modifyJsonTemplate 'YouTube_Premium_result' 'No'
+        return
+    elif [ -n "$isAvailable" ] && [ -n "$region" ]; then
+        modifyJsonTemplate 'YouTube_Premium_result' 'Yes' "${region}"
+        return
+        elif [ -z "$region" ] && [ -n "$isAvailable" ]; then
+        modifyJsonTemplate 'YouTube_Premium_result' 'Yes'
+        return
+    else
+        modifyJsonTemplate 'YouTube_Premium_result' 'Unknow'
+    fi
+}
+
+MediaUnlockTest_MyTVSuper() {
+    local result=$(curl $useNIC $usePROXY $xForward -s -${1} --max-time 10 "https://www.mytvsuper.com/api/auth/getSession/self/" 2>&1 | python -m json.tool 2>/dev/null | grep 'region' | awk '{print $2}')
+
+    if [[ "$result" == "1" ]]; then
         modifyJsonTemplate 'MyTVSuper_result' 'Yes'
         return
     else
         modifyJsonTemplate 'MyTVSuper_result' 'No'
         return
     fi
-
     modifyJsonTemplate 'MyTVSuper_result' 'Unknow'
 }
 
@@ -495,7 +493,7 @@ postData() {
     mu_key=$(sed -n 2p /root/.csm.config)
     node_id=$(sed -n 3p /root/.csm.config)
 
-    curl -s -X POST -d "content=$(cat /root/media_test_tpl.json | base64 | xargs echo -n | sed 's# ##g')" "${panel_address}/mod_mu/media/saveReport?key=${mu_key}&node_id=${node_id}" > /dev/null
+    curl -s -X POST -d "content=$(cat /root/media_test_tpl.json | base64 | xargs echo -n | sed 's# ##g')" "${panel_address}/mod_mu/media/save_report?key=${mu_key}&node_id=${node_id}" > /dev/null
 
     rm -rf /root/media_test_tpl.json
 }
@@ -508,7 +506,7 @@ printInfo() {
     echo
     echo -e "${green_start}Project: https://github.com/iamsaltedfish/check-stream-media${color_end}"
     echo -e "${green_start}Author: @iamsaltedfish${color_end}"
-    echo -e "${green_start}2022-12-19 v.1.0.5${color_end}"
+    echo -e "${green_start}2022-12-19 v.1.0.6${color_end}"
 }
 
 runCheck() {
@@ -524,7 +522,8 @@ runCheck() {
 }
 
 main() {
-    checkOs
+    checkOS
+    checkCPU
     checkDependencies
     setCronTask
     checkConfig
