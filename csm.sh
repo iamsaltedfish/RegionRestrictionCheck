@@ -67,6 +67,11 @@ IATACode=$(curl -s --retry 3 --max-time 10 "https://raw.githubusercontent.com/lm
 WOWOW_Cookie=$(echo "$Media_Cookie" | awk 'NR==3')
 TVer_Cookie="Accept: application/json;pk=BCpkADawqM0_rzsjsYbC1k1wlJLU4HiAtfzjxdUmfvvLUQB-Ax6VA-p-9wOEZbCEm3u95qq2Y1CQQW1K9tPaMma9iAqUqhpISCmyXrgnlpx9soEmoVNuQpiyGsTpePGumWxSs1YoKziYB6Wz"
 
+blue()
+{
+    echo -e "\033[34m[input]\033[0m"
+}
+
 countRunTimes() {
     if [ "$is_busybox" == 1 ]; then
         count_file=$(mktemp)
@@ -109,7 +114,6 @@ checkOS() {
         InstallMethod="brew"
     fi
 }
-checkOS
 
 checkCPU() {
     CPUArch=$(uname -m)
@@ -123,7 +127,6 @@ checkCPU() {
         arch=_darwin
     fi
 }
-checkCPU
 
 checkDependencies() {
 
