@@ -416,12 +416,12 @@ MediaUnlockTest_YouTube_Premium() {
     local isCN=$(echo $tmpresult | grep 'www.google.cn')
     if [ -n "$isCN" ]; then
         echo -n -e "\r YouTube Premium:\t\t\t${Font_Red}No${Font_Suffix} ${Font_Green} (Region: CN)${Font_Suffix} \n"
-        modifyJsonTemplate 'YouTube_Premium_result' 'No' "CN"
+        modifyJsonTemplate 'YouTube_Premium_result' 'No' 'CN'
         return
     fi
     local isNotAvailable=$(echo $tmpresult | grep 'Premium is not available in your country')
     local region=$(echo $tmpresult | grep "countryCode" | sed 's/.*"countryCode"//' | cut -f2 -d'"')
-    local isAvailable=$(echo $tmpresult | grep 'manageSubscriptionButton')
+    local isAvailable=$(echo $tmpresult | grep '/month')
 
     if [ -n "$isNotAvailable" ]; then
         echo -n -e "\r YouTube Premium:\t\t\t${Font_Red}No${Font_Suffix} \n"
@@ -439,7 +439,6 @@ MediaUnlockTest_YouTube_Premium() {
         echo -n -e "\r YouTube Premium:\t\t\t${Font_Red}Failed${Font_Suffix}\n"
         modifyJsonTemplate 'YouTube_Premium_result' 'Unknow'
     fi
-
 }
 
 ###
@@ -471,26 +470,35 @@ OpenAiUnlockTest()
         echo "Your IP is BLOCKED!"
     else
         #echo -e "[IPv4]"
-        check4=`ping 1.1.1.1 -c 1 2>&1`;
-        if [[ "$check4" != *"received"* ]] && [[ "$check4" != *"transmitted"* ]];then
-            echo -e "\033[34mIPv4 is not supported on the current host. Skip...\033[0m";
-            modifyJsonTemplate 'OpenAI_result' 'Unknow'
-        else
+        # check4=`ping 1.1.1.1 -c 1 2>&1`;
+        # if [[ "$check4" != *"received"* ]] && [[ "$check4" != *"transmitted"* ]];then
+        #     echo -e "\033[34mIPv4 is not supported on the current host. Skip...\033[0m";
+        #     modifyJsonTemplate 'OpenAI_result' 'Unknow'
+        # else
             # local_ipv4=$(curl -4 -s --max-time 10 api64.ipify.org)
             #local_ipv4=$(curl -4 -sS https://chat.openai.com/cdn-cgi/trace | grep "ip=" | awk -F= '{print $2}')
             #local_isp4=$(curl -s -4 --max-time 10  --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36" "https://api.ip.sb/geoip/${local_ipv4}" | grep organization | cut -f4 -d '"')
             #local_asn4=$(curl -s -4 --max-time 10  --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36" "https://api.ip.sb/geoip/${local_ipv4}" | grep asn | cut -f8 -d ',' | cut -f2 -d ':')
             #echo -e "${BLUE}Your IPv4: ${local_ipv4} - ${local_isp4}${PLAIN}"
             iso2_code4=$(curl -4 -sS https://chat.openai.com/cdn-cgi/trace | grep "loc=" | awk -F= '{print $2}')
-            if [[ "${SUPPORT_COUNTRY[@]}"  =~ "${iso2_code4}" ]];
+            found=0
+            for country in "${SUPPORT_COUNTRY[@]}"
+            do
+                if [[ "${country}" == "${iso2_code4}" ]];
+                then
+                    echo -e "${BLUE}Your IP supports access to OpenAI. Region: ${iso2_code4}${PLAIN}"
+                    modifyJsonTemplate 'OpenAI_result' 'Yes' "${iso2_code4}"
+                    found=1
+                    break
+                fi
+            done
+
+            if [[ $found -eq 0 ]];
             then
-                echo -e "${BLUE}Your IP supports access to OpenAI. Region: ${iso2_code4}${PLAIN}"
-                modifyJsonTemplate 'OpenAI_result' 'YES' "${iso2_code4}"
-            else
                 echo -e "${RED}Region: ${iso2_code4}. Not support OpenAI at this time.${PLAIN}"
-                modifyJsonTemplate 'OpenAI_result' 'NO'
+                modifyJsonTemplate 'OpenAI_result' 'No'
             fi
-        fi
+        # fi
     fi
 }
 
@@ -509,7 +517,8 @@ createJsonTemplate() {
     "BilibiliTW": "BilibiliTW_result",
     "MyTVSuper": "MyTVSuper_result",
     "BBC": "BBC_result",
-    "Abema": "AbemaTV_result"
+    "Abema": "AbemaTV_result",
+    "OpenAI": "OpenAI_result"
 }' > /root/media_test_tpl.json
 }
 
@@ -628,7 +637,7 @@ printInfo() {
     echo -e "${green_start}The code for this script to detect streaming media unlocking is all from the open source project https://github.com/lmc999/RegionRestrictionCheck , and the open source protocol is AGPL-3.0. This script is open source as required by the open source license. Thanks to the original author @lmc999 and everyone who made the pull request for this project for their contributions.${color_end}"
     echo
     echo -e "${green_start}Project: https://github.com/iamsaltedfish/check-stream-media${color_end}"
-    echo -e "${green_start}Version: 2023-03-02 v.2.0.0${color_end}"
+    echo -e "${green_start}Version: 2023-08-07 v.2.0.1${color_end}"
     echo -e "${green_start}Author: @iamsaltedfish${color_end}"
 }
 
@@ -642,7 +651,7 @@ runCheck() {
     MediaUnlockTest_Netflix 4
     MediaUnlockTest_YouTube_Premium 4
     MediaUnlockTest_DisneyPlus 4
-    #OpenAiUnlockTest
+    OpenAiUnlockTest
 }
 
 checkData()
